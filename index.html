@@ -9,14 +9,12 @@
             text-align: center;
             padding: 10px;
         }
-
         video {
             border: 2px solid #333;
             border-radius: 8px;
         }
-
         #predictBtn {
-            background-color: #4CAF50; /* green */
+            background-color: #4CAF50;
             color: white;
             font-size: 1.5em;
             padding: 15px 30px;
@@ -24,13 +22,11 @@
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            display: block; /* centers the button */
+            display: block;
         }
-
         #predictBtn:hover {
             background-color: #45a049;
         }
-
         #result, #status {
             font-size: 1.3em;
             margin-top: 15px;
@@ -40,7 +36,6 @@
 <body>
     <h2>Capture a handwritten digit</h2>
     <video id="video" width="280" height="280" autoplay></video>
-    <br>
     <button id="predictBtn">Predict</button>
     <h3 id="status">Loading model...</h3>
     <h3 id="result"></h3>
@@ -52,10 +47,11 @@
         const video = document.getElementById("video");
         const resultEl = document.getElementById("result");
         const statusEl = document.getElementById("status");
-
         let session;
 
-        // Load ONNX quantized model
+        // -------------------------------
+        // Load ONNX model
+        // -------------------------------
         ort.InferenceSession.create("cnn_model_quant.onnx").then(s => {
             session = s;
             statusEl.innerText = "Model loaded. Ready to predict!";
@@ -64,9 +60,11 @@
             console.error("ONNX model load error:", err);
         });
 
+        // -------------------------------
         // Open back camera with fallback
+        // -------------------------------
         async function openCamera() {
-            let constraints = { video: { facingMode: { ideal: "environment" } } };
+            const constraints = { video: { facingMode: { ideal: "environment" } } };
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
@@ -81,36 +79,43 @@
                 }
             }
         }
-
         openCamera();
 
-        // Predict on button click
-        document.getElementById("predictBtn").addEventListener("click", async () => {
-            if(!session) { alert("Model not loaded yet!"); return; }
-
-            let canvas = document.createElement("canvas");
+        // -------------------------------
+        // Preprocessing function (inline)
+        // Converts video frame -> [1,28,28,1] tensor
+        // -------------------------------
+        function preprocessImage(video, invert = true) {
+            const canvas = document.createElement("canvas");
             canvas.width = 28;
             canvas.height = 28;
-            let ctx = canvas.getContext("2d");
+            const ctx = canvas.getContext("2d");
             ctx.drawImage(video, 0, 0, 28, 28);
+            const imgData = ctx.getImageData(0,0,28,28);
+            const input = new Float32Array(28*28);
 
-            let imgData = ctx.getImageData(0, 0, 28, 28);
-            let input = new Float32Array(1*28*28*1);
-
-            for(let i=0; i<28*28; i++){
-                let r = imgData.data[i*4];
-                let g = imgData.data[i*4+1];
-                let b = imgData.data[i*4+2];
-                let gray = 0.299*r + 0.587*g + 0.114*b;
-                input[i] = gray / 255.0;
+            for (let i=0; i<28*28; i++) {
+                const r = imgData.data[i*4];
+                const g = imgData.data[i*4+1];
+                const b = imgData.data[i*4+2];
+                const gray = 0.299*r + 0.587*g + 0.114*b;
+                input[i] = invert ? 1.0 - (gray/255.0) : gray/255.0;
             }
+            return new ort.Tensor('float32', input, [1,28,28,1]);
+        }
 
-            let tensor = new ort.Tensor('float32', input, [1,28,28,1]);
+        // -------------------------------
+        // Predict button click
+        // -------------------------------
+        document.getElementById("predictBtn").addEventListener("click", async () => {
+            if (!session) { alert("Model not loaded yet!"); return; }
+
+            const tensor = preprocessImage(video, true);
 
             try {
-                let output = await session.run({input: tensor});
-                let preds = output[Object.keys(output)[0]].data;
-                let predLabel = preds.indexOf(Math.max(...preds));
+                const output = await session.run({input: tensor});
+                const preds = output[Object.keys(output)[0]].data;
+                const predLabel = preds.indexOf(Math.max(...preds));
                 resultEl.innerText = "Predicted digit: " + predLabel;
             } catch (err) {
                 console.error("Inference error:", err);
