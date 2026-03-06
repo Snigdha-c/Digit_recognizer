@@ -49,9 +49,7 @@
         const statusEl = document.getElementById("status");
         let session;
 
-        // -------------------------------
         // Load ONNX model
-        // -------------------------------
         ort.InferenceSession.create("cnn_model_quant.onnx").then(s => {
             session = s;
             statusEl.innerText = "Model loaded. Ready to predict!";
@@ -60,9 +58,7 @@
             console.error("ONNX model load error:", err);
         });
 
-        // -------------------------------
         // Open back camera with fallback
-        // -------------------------------
         async function openCamera() {
             const constraints = { video: { facingMode: { ideal: "environment" } } };
             try {
@@ -81,16 +77,21 @@
         }
         openCamera();
 
-        // -------------------------------
-        // Preprocessing function (inline)
-        // Converts video frame -> [1,28,28,1] tensor
-        // -------------------------------
-        function preprocessImage(video, invert = true) {
+        // Preprocess function: crop center, scale to 28x28, grayscale, invert
+        function preprocessImage(video, invert=true) {
+            // Crop center of video for better digit capture
+            const cropSize = Math.min(video.videoWidth, video.videoHeight);
+            const sx = (video.videoWidth - cropSize) / 2;
+            const sy = (video.videoHeight - cropSize) / 2;
+
             const canvas = document.createElement("canvas");
             canvas.width = 28;
             canvas.height = 28;
             const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, 28, 28);
+
+            // Draw cropped video frame scaled to 28x28
+            ctx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, 28, 28);
+
             const imgData = ctx.getImageData(0,0,28,28);
             const input = new Float32Array(28*28);
 
@@ -99,14 +100,18 @@
                 const g = imgData.data[i*4+1];
                 const b = imgData.data[i*4+2];
                 const gray = 0.299*r + 0.587*g + 0.114*b;
-                input[i] = invert ? 1.0 - (gray/255.0) : gray/255.0;
+
+                // Invert for black digit on white paper
+                let val = invert ? 1.0 - (gray/255.0) : gray/255.0;
+
+                // Optional thresholding (makes digit crisper)
+                input[i] = val > 0.5 ? 1.0 : 0.0;
             }
+
             return new ort.Tensor('float32', input, [1,28,28,1]);
         }
 
-        // -------------------------------
         // Predict button click
-        // -------------------------------
         document.getElementById("predictBtn").addEventListener("click", async () => {
             if (!session) { alert("Model not loaded yet!"); return; }
 
