@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MNIST Digit Recognizer (Camera)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+    <h2>Capture a handwritten digit</h2>
+    <video id="video" width="280" height="280" autoplay></video>
+    <br>
+    <button id="predictBtn">Predict</button>
+    <h3 id="result"></h3>
+
+    <!-- ONNX Runtime Web -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+    <script>
+        const video = document.getElementById("video");
+        const resultEl = document.getElementById("result");
+
+        let session;
+
+        // Load ONNX quantized model
+        ort.InferenceSession.create("cnn_model_quant.onnx").then(s => session = s);
+
+        // Access mobile camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => { console.error("Camera access error:", err); });
+
+        // Predict on button click
+        document.getElementById("predictBtn").addEventListener("click", async () => {
+            if(!session) { alert("Model not loaded yet!"); return; }
+
+            // Create temporary canvas to preprocess video frame
+            let canvas = document.createElement("canvas");
+            canvas.width = 28;
+            canvas.height = 28;
+            let ctx = canvas.getContext("2d");
+            
+            // Draw current video frame onto 28x28 canvas
+            ctx.drawImage(video, 0, 0, 28, 28);
+
+            // Get pixel data
+            let imgData = ctx.getImageData(0, 0, 28, 28);
+            let input = new Float32Array(1*28*28*1);
+
+            // Convert to grayscale and normalize
+            for(let i=0; i<28*28; i++){
+                let r = imgData.data[i*4];
+                let g = imgData.data[i*4+1];
+                let b = imgData.data[i*4+2];
+                let gray = 0.299*r + 0.587*g + 0.114*b;
+                input[i] = gray / 255.0;
+            }
+
+            // Create ONNX tensor
+            let tensor = new ort.Tensor('float32', input, [1,28,28,1]);
+
+            // Run inference
+            let output = await session.run({input: tensor});
+            let preds = output[Object.keys(output)[0]].data;
+            let predLabel = preds.indexOf(Math.max(...preds));
+
+            resultEl.innerText = "Predicted digit: " + predLabel;
+        });
+    </script>
+</body>
+</html>
