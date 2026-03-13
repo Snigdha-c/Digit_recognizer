@@ -155,40 +155,53 @@ document.getElementById("capture").onclick = function(){
 };
 
 // predict digit
-document.getElementById("predict").onclick = async function(){
+document.getElementById("predictBtn").onclick = async function(){
 
-    if(!session){
-        result.innerText="Model loading...";
-        return;
-    }
+try{
 
-    const imgData = ctx.getImageData(0,0,28,28);
-    const data = imgData.data;
+if(!session){
+document.getElementById("result").innerText="Model not loaded yet";
+return;
+}
 
-    const input = new Float32Array(28*28);
+const imgData = ctx.getImageData(0,0,28,28);
+const data = imgData.data;
 
-    for(let i=0;i<28*28;i++){
-        input[i] = data[i*4] / 255;
-    }
+const input = new Float32Array(28*28);
 
-    const tensor = new ort.Tensor("float32", input, [1,1,28,28]);
+for(let i=0;i<28*28;i++){
+input[i] = data[i*4] / 255;
+}
 
-    const feeds = {};
-    feeds[session.inputNames[0]] = tensor;
+const tensor = new ort.Tensor("float32", input, [1,28,28,1]);
 
-    const outputs = await session.run(feeds);
+const feeds = {};
+feeds[session.inputNames[0]] = tensor;
 
-    const scores = outputs[session.outputNames[0]].data;
+const outputs = await session.run(feeds);
 
-    let maxIndex = 0;
+const scores = outputs[session.outputNames[0]].data;
 
-    for(let i=1;i<scores.length;i++){
-        if(scores[i] > scores[maxIndex]){
-            maxIndex = i;
-        }
-    }
+let maxIndex = 0;
 
-    result.innerText = "Predicted Digit: " + maxIndex;
+for(let i=1;i<scores.length;i++){
+if(scores[i] > scores[maxIndex]){
+maxIndex = i;
+}
+}
+
+document.getElementById("result").innerText =
+"Predicted Digit: " + maxIndex;
+
+}
+catch(err){
+
+document.getElementById("result").innerText =
+"Error during prediction";
+
+console.error(err);
+
+}
 
 };
 
