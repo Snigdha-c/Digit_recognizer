@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Digit Camera Preprocessing</title>
+<title>Digit Recognizer</title>
 
 <style>
 body{
@@ -29,29 +29,41 @@ button{
     padding:10px 20px;
     margin:10px;
 }
+
+#result{
+    font-size:24px;
+    margin-top:10px;
+}
 </style>
 </head>
 
 <body>
 
-<h2>Capture Digit</h2>
+<h2>Digit Recognizer</h2>
 
 <video id="video" autoplay playsinline></video>
 <br>
 
 <button id="capture">Capture</button>
+<button id="predict">Predict</button>
 
 <h3>Processed 28×28 Image</h3>
-
 <canvas id="canvas" width="28" height="28"></canvas>
+
+<div id="result"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
 <script>
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const result = document.getElementById("result");
 
-// start camera
+let session = null;
+
+// open camera
 navigator.mediaDevices.getUserMedia({
     video:{ facingMode:"environment" }
 })
@@ -62,6 +74,13 @@ navigator.mediaDevices.getUserMedia({
     alert("Camera access denied");
 });
 
+// load ONNX model
+async function loadModel(){
+    session = await ort.InferenceSession.create("cnn_model_quant.onnx");
+}
+loadModel();
+
+// capture image
 document.getElementById("capture").onclick = function(){
 
     const tempCanvas = document.createElement("canvas");
@@ -84,23 +103,18 @@ document.getElementById("capture").onclick = function(){
         for(let x=0;x<tempCanvas.width;x++){
 
             const i=(y*tempCanvas.width+x)*4;
-
             const gray=(data[i]+data[i+1]+data[i+2])/3;
 
             if(gray<200){
-
                 if(x<minX) minX=x;
                 if(x>maxX) maxX=x;
                 if(y<minY) minY=y;
                 if(y>maxY) maxY=y;
-
             }
         }
     }
 
-    if(maxX<=minX || maxY<=minY){
-        return;
-    }
+    if(maxX<=minX || maxY<=minY) return;
 
     const width=maxX-minX;
     const height=maxY-minY;
@@ -138,6 +152,43 @@ document.getElementById("capture").onclick = function(){
     }
 
     ctx.putImageData(processed,0,0);
+};
+
+// predict digit
+document.getElementById("predict").onclick = async function(){
+
+    if(!session){
+        result.innerText="Model loading...";
+        return;
+    }
+
+    const imgData = ctx.getImageData(0,0,28,28);
+    const data = imgData.data;
+
+    const input = new Float32Array(28*28);
+
+    for(let i=0;i<28*28;i++){
+        input[i] = data[i*4] / 255;
+    }
+
+    const tensor = new ort.Tensor("float32", input, [1,1,28,28]);
+
+    const feeds = {};
+    feeds[session.inputNames[0]] = tensor;
+
+    const outputs = await session.run(feeds);
+
+    const scores = outputs[session.outputNames[0]].data;
+
+    let maxIndex = 0;
+
+    for(let i=1;i<scores.length;i++){
+        if(scores[i] > scores[maxIndex]){
+            maxIndex = i;
+        }
+    }
+
+    result.innerText = "Predicted Digit: " + maxIndex;
 
 };
 
